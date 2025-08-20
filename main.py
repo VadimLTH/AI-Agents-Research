@@ -3,6 +3,7 @@ import os
 import sqlite3
 from langchain_community.llms import Ollama
 from tavily import TavilyClient
+from agents.manager import decompose_task, orchestrate_agents
 
 # --- Initialization ---
 
@@ -58,13 +59,25 @@ if st.button("Start Research"):
             db_conn = init_db()
 
             st.success("Core components initialized successfully!")
-            st.write("Next steps: Implement the agent logic.")
 
-            # Placeholder for agent logic
-            # For now, just display the initialized components
-            st.write("**Ollama LLM:**", llm)
-            st.write("**Tavily Client:**", tavily)
-            st.write("**SQLite Connection:**", db_conn)
+            # 1. Decompose the task
+            st.write("Decomposing the task...")
+            user_query = f"Topic: {topic}\nGoal: {goal}"
+            tasks = decompose_task(user_query, llm)
+
+            if tasks:
+                st.write("Tasks decomposed successfully!")
+                st.subheader("Planned Tasks:")
+                for task in tasks:
+                    st.write(f"- **Agent:** {task['agent']}, **Task:** {task['description']}")
+
+                # 2. Orchestrate the agents
+                st.write("Orchestrating agents...")
+                task_ids = orchestrate_agents(tasks, db_conn)
+                st.success(f"Tasks have been created and stored with IDs: {task_ids}")
+
+            else:
+                st.error("Failed to decompose the task. Please try again.")
 
             db_conn.close()
 
