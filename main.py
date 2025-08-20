@@ -58,17 +58,18 @@ if st.button("Start Research"):
             db_conn = init_db()
 
             st.success("Core components initialized successfully!")
-            st.write("Next steps: Implement the agent logic.")
 
-            # Placeholder for agent logic
-            # For now, just display the initialized components
-            st.write("**Ollama LLM:**", llm)
-            st.write("**Tavily Client:**", tavily)
-            st.write("**SQLite Connection:**", db_conn)
+            # Create and run the researcher agent
+            from agents.researcher import create_researcher_agent
+            researcher_agent = create_researcher_agent(llm)
+            result = researcher_agent(topic, goal)
+
+            st.write("**Research Report:**")
+            st.write(result['output'])
 
             db_conn.close()
 
         except Exception as e:
-            st.error(f"An error occurred during initialization: {e}")
+            st.error(f"An error occurred: {e}")
     else:
         st.warning("Please provide both a topic and a goal.")
