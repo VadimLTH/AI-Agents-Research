@@ -1,6 +1,7 @@
 import json
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
+from agents.researcher import run_researcher
 
 def decompose_task(user_query, llm):
     """
@@ -60,13 +61,15 @@ def decompose_task(user_query, llm):
 
     return response.get("tasks", [])
 
-def orchestrate_agents(tasks, db_conn):
+def orchestrate_agents(tasks, db_conn, llm, tavily_client):
     """
     Orchestrates the execution of tasks by inserting them into the database.
 
     Args:
         tasks (list): A list of task dictionaries from decompose_task.
         db_conn (sqlite3.Connection): The database connection.
+        llm (Ollama): The Ollama LLM instance.
+        tavily_client (TavilyClient): The Tavily client instance.
 
     Returns:
         list: A list of task IDs that were inserted into the database.
@@ -75,13 +78,24 @@ def orchestrate_agents(tasks, db_conn):
     task_ids = []
 
     for task in tasks:
-        # For now, we'll just add tasks to the database.
-        # In the future, this function will trigger the agents.
+        # Insert the task into the database first
         cursor.execute(
             "INSERT INTO tasks (description, agent, status, result) VALUES (?, ?, ?, ?)",
             (task['description'], task['agent'], 'pending', '')
         )
         db_conn.commit()
-        task_ids.append(cursor.lastrowid)
+        task_id = cursor.lastrowid
+        task_ids.append(task_id)
+
+        # If the agent is the Researcher, run the researcher agent
+        if task['agent'] == 'Researcher':
+            result = run_researcher(task['description'], llm, tavily_client)
+
+            # Update the task with the result
+            cursor.execute(
+                "UPDATE tasks SET status = ?, result = ? WHERE id = ?",
+                ('completed', result, task_id)
+            )
+            db_conn.commit()
 
     return task_ids
