@@ -2,6 +2,7 @@ import json
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from agents.researcher import run_researcher
+from agents.writer import run_writer
 
 def decompose_task(user_query, llm):
     """
@@ -76,6 +77,7 @@ def orchestrate_agents(tasks, db_conn, llm, tavily_client):
     """
     cursor = db_conn.cursor()
     task_ids = []
+    research_result = None
 
     for task in tasks:
         # Insert the task into the database first
@@ -90,6 +92,7 @@ def orchestrate_agents(tasks, db_conn, llm, tavily_client):
         # If the agent is the Researcher, run the researcher agent
         if task['agent'] == 'Researcher':
             result = run_researcher(task['description'], llm, tavily_client)
+            research_result = result  # Store the research result
 
             # Update the task with the result
             cursor.execute(
@@ -97,5 +100,25 @@ def orchestrate_agents(tasks, db_conn, llm, tavily_client):
                 ('completed', result, task_id)
             )
             db_conn.commit()
+
+        # If the agent is the Writer, run the writer agent
+        elif task['agent'] == 'Writer':
+            if research_result:
+                result = run_writer(task['description'], llm, research_result)
+
+                # Update the task with the result
+                cursor.execute(
+                    "UPDATE tasks SET status = ?, result = ? WHERE id = ?",
+                    ('completed', result, task_id)
+                )
+                db_conn.commit()
+            else:
+                # Handle the case where the writer is called before the researcher
+                cursor.execute(
+                    "UPDATE tasks SET status = ?, result = ? WHERE id = ?",
+                    ('failed', 'Researcher has not been run yet.', task_id)
+                )
+                db_conn.commit()
+
 
     return task_ids
