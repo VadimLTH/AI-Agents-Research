@@ -1,6 +1,6 @@
 from langchain_core.prompts import PromptTemplate
 
-def run_writer(task: str, llm, research_result: str) -> str:
+def run_writer(task: str, llm, research_result: str, context: str) -> str:
     """
     Runs the writer agent for a given task.
 
@@ -8,6 +8,7 @@ def run_writer(task: str, llm, research_result: str) -> str:
         task (str): The writing task.
         llm (Ollama): The Ollama LLM instance.
         research_result (str): The research result from the researcher agent.
+        context (str): The memory context from previous steps.
 
     Returns:
         str: The generated report.
@@ -15,6 +16,9 @@ def run_writer(task: str, llm, research_result: str) -> str:
     # Define the prompt template for the writer agent
     writer_template = \"\"\"
     You are a writer agent. Your goal is to write a cohesive and well-structured report based on the provided research data.
+    Review the following recent memory entries to understand the context of the task:
+    {context}
+
     The user's request is: {task}
     The research data is: {research_result}
 
@@ -24,13 +28,17 @@ def run_writer(task: str, llm, research_result: str) -> str:
 
     prompt = PromptTemplate(
         template=writer_template,
-        input_variables=["task", "research_result"],
+        input_variables=["task", "research_result", "context"],
     )
 
     # Create the chain
     chain = prompt | llm
 
     # Invoke the chain
-    response = chain.invoke({"task": task, "research_result": research_result})
+    response = chain.invoke({
+        "task": task,
+        "research_result": research_result,
+        "context": context
+    })
 
     return response
