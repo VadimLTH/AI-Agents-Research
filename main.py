@@ -73,8 +73,20 @@ if st.button("Start Research"):
 
                 # 2. Orchestrate the agents
                 st.write("Orchestrating agents...")
-                task_ids = orchestrate_agents(tasks, db_conn)
+                task_ids = orchestrate_agents(tasks, db_conn, llm, tavily)
                 st.success(f"Tasks have been created and stored with IDs: {task_ids}")
+
+                # 3. Display the final report
+                st.write("Fetching the final report...")
+                cursor = db_conn.cursor()
+                cursor.execute("SELECT result FROM tasks WHERE agent = 'Writer' AND status = 'completed'")
+                report = cursor.fetchone()
+
+                if report:
+                    st.subheader("Final Report:")
+                    st.markdown(report[0])
+                else:
+                    st.error("Could not retrieve the final report.")
 
             else:
                 st.error("Failed to decompose the task. Please try again.")
