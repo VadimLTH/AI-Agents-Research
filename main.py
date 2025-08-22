@@ -4,6 +4,8 @@ import sqlite3
 from langchain_community.llms import Ollama
 from tavily import TavilyClient
 from agents.manager import decompose_task, orchestrate_agents
+from agents.tools import SandboxExecutor
+from ai_code_sandbox import AICodeSandbox
 
 # --- Initialization ---
 
@@ -57,6 +59,8 @@ if st.button("Start Research"):
             llm = get_ollama_llm()
             tavily = get_tavily_client()
             db_conn = init_db()
+            sandbox = AICodeSandbox()
+            sandbox_executor = SandboxExecutor(sandbox=sandbox)
 
             st.success("Core components initialized successfully!")
 
@@ -73,13 +77,14 @@ if st.button("Start Research"):
 
                 # 2. Orchestrate the agents
                 st.write("Orchestrating agents...")
-                task_ids = orchestrate_agents(tasks, db_conn, llm, tavily)
+                task_ids = orchestrate_agents(tasks, db_conn, llm, tavily, sandbox_executor)
                 st.success(f"Tasks have been created and stored with IDs: {task_ids}")
 
                 # 3. Display the final report
                 st.write("Fetching the final report...")
                 cursor = db_conn.cursor()
-                cursor.execute("SELECT result FROM tasks WHERE agent = 'Writer' AND status = 'completed'")
+                # Check for writer or programmer agent results
+                cursor.execute("SELECT result FROM tasks WHERE agent IN ('Writer', 'Programmer') AND status = 'completed'")
                 report = cursor.fetchone()
 
                 if report:
@@ -92,6 +97,7 @@ if st.button("Start Research"):
                 st.error("Failed to decompose the task. Please try again.")
 
             db_conn.close()
+            sandbox.close()
 
         except Exception as e:
             st.error(f"An error occurred during initialization: {e}")

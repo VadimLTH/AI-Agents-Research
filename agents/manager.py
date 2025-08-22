@@ -3,6 +3,8 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from agents.researcher import run_researcher
 from agents.writer import run_writer
+from agents.programmer import run_programmer
+from agents.tools import SandboxExecutor
 
 def decompose_task(user_query, llm):
     """
@@ -62,7 +64,7 @@ def decompose_task(user_query, llm):
 
     return response.get("tasks", [])
 
-def orchestrate_agents(tasks, db_conn, llm, tavily_client):
+def orchestrate_agents(tasks, db_conn, llm, tavily_client, sandbox_executor: SandboxExecutor):
     """
     Orchestrates the execution of tasks by inserting them into the database.
 
@@ -71,6 +73,7 @@ def orchestrate_agents(tasks, db_conn, llm, tavily_client):
         db_conn (sqlite3.Connection): The database connection.
         llm (Ollama): The Ollama LLM instance.
         tavily_client (TavilyClient): The Tavily client instance.
+        sandbox_executor (SandboxExecutor): The sandbox executor for running code.
 
     Returns:
         list: A list of task IDs that were inserted into the database.
@@ -119,6 +122,17 @@ def orchestrate_agents(tasks, db_conn, llm, tavily_client):
                     ('failed', 'Researcher has not been run yet.', task_id)
                 )
                 db_conn.commit()
+
+        # If the agent is the Programmer, run the programmer agent
+        elif task['agent'] == 'Programmer':
+            result = run_programmer(task['description'], llm, sandbox_executor)
+
+            # Update the task with the result
+            cursor.execute(
+                "UPDATE tasks SET status = ?, result = ? WHERE id = ?",
+                ('completed', result, task_id)
+            )
+            db_conn.commit()
 
 
     return task_ids
