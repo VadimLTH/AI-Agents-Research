@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import sqlite3
+import uuid
 from langchain_community.llms import Ollama
 from tavily import TavilyClient
 from agents.manager import decompose_task, orchestrate_agents
@@ -39,6 +40,19 @@ def init_db():
             agent TEXT
         )
     ''')
+
+    # Create a table for agent memory
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS agent_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            agent_name TEXT,
+            action TEXT,
+            content TEXT
+        )
+    ''')
+
     conn.commit()
     return conn
 
@@ -77,7 +91,8 @@ if st.button("Start Research"):
 
                 # 2. Orchestrate the agents
                 st.write("Orchestrating agents...")
-                task_ids = orchestrate_agents(tasks, db_conn, llm, tavily, sandbox_executor)
+                project_id = str(uuid.uuid4())
+                task_ids = orchestrate_agents(project_id, tasks, db_conn, llm, tavily, sandbox_executor)
                 st.success(f"Tasks have been created and stored with IDs: {task_ids}")
 
                 # 3. Display the final report

@@ -5,6 +5,7 @@ from agents.researcher import run_researcher
 from agents.writer import run_writer
 from agents.programmer import run_programmer
 from agents.tools import SandboxExecutor
+from agents.memory import AgentMemory
 
 def decompose_task(user_query, llm):
     """
@@ -64,11 +65,12 @@ def decompose_task(user_query, llm):
 
     return response.get("tasks", [])
 
-def orchestrate_agents(tasks, db_conn, llm, tavily_client, sandbox_executor: SandboxExecutor):
+def orchestrate_agents(project_id: str, tasks: list, db_conn, llm, tavily_client, sandbox_executor: SandboxExecutor):
     """
-    Orchestrates the execution of tasks by inserting them into the database.
+    Orchestrates the execution of tasks by inserting them into the database and managing agent memory.
 
     Args:
+        project_id (str): The unique ID for the research project.
         tasks (list): A list of task dictionaries from decompose_task.
         db_conn (sqlite3.Connection): The database connection.
         llm (Ollama): The Ollama LLM instance.
@@ -81,9 +83,14 @@ def orchestrate_agents(tasks, db_conn, llm, tavily_client, sandbox_executor: San
     cursor = db_conn.cursor()
     task_ids = []
     research_result = None
+    memory = AgentMemory()
+
+    # Save the initial task list to memory
+    decomposed_tasks_str = json.dumps(tasks)
+    memory.save_entry(project_id, "Manager", "decomposed_tasks", decomposed_tasks_str)
 
     for task in tasks:
-        # Insert the task into the database first
+        # Insert the task into the database
         cursor.execute(
             "INSERT INTO tasks (description, agent, status, result) VALUES (?, ?, ?, ?)",
             (task['description'], task['agent'], 'pending', '')
@@ -92,47 +99,45 @@ def orchestrate_agents(tasks, db_conn, llm, tavily_client, sandbox_executor: San
         task_id = cursor.lastrowid
         task_ids.append(task_id)
 
-        # If the agent is the Researcher, run the researcher agent
-        if task['agent'] == 'Researcher':
-            result = run_researcher(task['description'], llm, tavily_client)
-            research_result = result  # Store the research result
+        # Get the current memory context
+        context = memory.get_context(project_id)
+        agent_name = task['agent']
+        task_description = task['description']
 
-            # Update the task with the result
-            cursor.execute(
-                "UPDATE tasks SET status = ?, result = ? WHERE id = ?",
-                ('completed', result, task_id)
-            )
-            db_conn.commit()
+        # Save the start of the task to memory
+        memory.save_entry(project_id, agent_name, "started_task", task_description)
 
-        # If the agent is the Writer, run the writer agent
-        elif task['agent'] == 'Writer':
-            if research_result:
-                result = run_writer(task['description'], llm, research_result)
+        result = ""
+        # Execute the task based on the agent
+        try:
+            if agent_name == 'Researcher':
+                result = run_researcher(task_description, llm, tavily_client, context)
+                research_result = result  # Store for the writer
 
-                # Update the task with the result
-                cursor.execute(
-                    "UPDATE tasks SET status = ?, result = ? WHERE id = ?",
-                    ('completed', result, task_id)
-                )
-                db_conn.commit()
-            else:
-                # Handle the case where the writer is called before the researcher
-                cursor.execute(
-                    "UPDATE tasks SET status = ?, result = ? WHERE id = ?",
-                    ('failed', 'Researcher has not been run yet.', task_id)
-                )
-                db_conn.commit()
+            elif agent_name == 'Writer':
+                if research_result:
+                    result = run_writer(task_description, llm, research_result, context)
+                else:
+                    raise ValueError("Writer agent called before Researcher agent.")
 
-        # If the agent is the Programmer, run the programmer agent
-        elif task['agent'] == 'Programmer':
-            result = run_programmer(task['description'], llm, sandbox_executor)
+            elif agent_name == 'Programmer':
+                result = run_programmer(task_description, llm, sandbox_executor, context)
 
-            # Update the task with the result
-            cursor.execute(
-                "UPDATE tasks SET status = ?, result = ? WHERE id = ?",
-                ('completed', result, task_id)
-            )
-            db_conn.commit()
+            # Save the successful result to memory
+            memory.save_entry(project_id, agent_name, "completed_task", result)
+            status = 'completed'
 
+        except Exception as e:
+            result = f"Error executing task: {e}"
+            memory.save_entry(project_id, agent_name, "error", result)
+            status = 'failed'
+            print(result) # For debugging
+
+        # Update the task in the database
+        cursor.execute(
+            "UPDATE tasks SET status = ?, result = ? WHERE id = ?",
+            (status, result, task_id)
+        )
+        db_conn.commit()
 
     return task_ids
