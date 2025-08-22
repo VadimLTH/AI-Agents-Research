@@ -3,3 +3,4 @@ langchain
 langchain-community
 tavily-python
 ollama
+ai-code-sandbox
